@@ -1,9 +1,8 @@
-# Laravel Preview Environment Skill
+# Laravel Preview Environment Agent Instructions
 
-This repository contains a reusable AI agent skill.
+When using this skill:
 
-Main skill:
-
-`skills/laravel-preview-environment/SKILL.md`
-
-Keep the skill portable and avoid project-specific secrets or assumptions.
+- Never modify the source branch being previewed.
+- Use disposable infrastructure.
+- Never expose production secrets.
+- Verify HTTPS assets before sharing preview URLs.
