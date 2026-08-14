@@ -78,7 +78,7 @@ jobs:
             cd "$stage"
             find . -type f -printf '%P\n' | LC_ALL=C sort | zip -X -q "$GITHUB_WORKSPACE/dist/$ARCHIVE_NAME" -@
           )
-          sha256sum "dist/$ARCHIVE_NAME" > "dist/$ARCHIVE_NAME.sha256"
+          (cd dist && sha256sum "$ARCHIVE_NAME" > "$ARCHIVE_NAME.sha256")
 
       - name: Verify release assets
         run: |
