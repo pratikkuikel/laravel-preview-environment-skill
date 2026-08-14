@@ -1,0 +1,4 @@
+interface:
+  display_name: "Laravel Preview Environment"
+  short_description: "Launch verified disposable Laravel previews"
+  default_prompt: "Use $laravel-preview-environment to create and verify a disposable HTTPS preview for this Laravel branch or pull request."

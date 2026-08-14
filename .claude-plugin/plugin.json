@@ -1,5 +1,8 @@
 {
-  "name": "laravel-preview-environment",
-  "description": "Create isolated Laravel preview environments",
-  "skills": ["skills/laravel-preview-environment"]
+  "name": "laravel-preview-environment-skill",
+  "description": "Create isolated, verified HTTPS previews for Laravel branches and pull requests.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Pratik Kuikel"
+  }
 }

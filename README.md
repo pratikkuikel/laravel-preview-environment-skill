@@ -1,76 +1,47 @@
 # Laravel Preview Environment Skill
 
-A cross-agent skill for launching disposable Laravel preview environments.
+Create disposable HTTPS previews for Laravel branches and pull requests without touching staging or production. The skill inspects the application, adapts a bounded GitHub Actions workflow, provisions synthetic data, builds frontend assets, launches a temporary Cloudflare Quick Tunnel, and verifies the public result before handoff.
 
-Supports Codex, Claude, ChatGPT Skills, and other agent workflows.
+The canonical cross-agent skill is `skills/laravel-preview-environment/SKILL.md`. It includes a project inspector, a workflow validator, a safe GitHub Actions starting point, and a detailed preview runbook.
 
-## Features
+## Agent support
 
-- GitHub Actions based previews
-- MySQL disposable database
-- Composer/PHP version detection
-- Vite production builds
-- Filament verification
-- HTTPS tunnel previews
-- APP_URL / ASSET_URL handling
-- Mixed content checks
-- Safe temporary credentials
+- Codex and ChatGPT: import `laravel-preview-environment-skill.zip`, install the repository as a plugin, or copy `skills/laravel-preview-environment` into `~/.codex/skills/`.
+- Claude Code: run `claude --plugin-dir .`, or use the checked-in `.claude/skills/` adapter.
+- Gemini CLI: run `gemini extensions link .`; `gemini-extension.json` loads `GEMINI.md`, which imports the canonical skill.
+- Other agents: point the agent to `AGENTS.md` or directly to the canonical `SKILL.md`.
 
-## Import into ChatGPT
+## Importable package
 
-Download:
+Download [`laravel-preview-environment-skill.zip`](https://raw.githubusercontent.com/pratikkuikel/laravel-preview-environment-skill/main/laravel-preview-environment-skill.zip) and import it as a ChatGPT or Codex skill. The archive contains only the Codex plugin manifest, this README, and the canonical skill with its bundled resources.
 
-```
-releases/laravel-preview-environment-skill.zip
-```
+## Direct user-level installation
 
-Import the ZIP file as a ChatGPT Skill.
+From the repository root:
 
-The package contains:
-
-```
-skills/
-└── laravel-preview-environment/
-    └── SKILL.md
+```bash
+mkdir -p ~/.agents/skills ~/.claude/skills
+cp -a skills/laravel-preview-environment ~/.agents/skills/
+cp -a skills/laravel-preview-environment ~/.claude/skills/
 ```
 
 ## Example prompts
 
-```
-Preview this Laravel PR and give me a temporary admin URL.
-```
-
-```
-Run this branch in an isolated Laravel preview environment.
+```text
+Preview this Laravel PR and give me a temporary verified admin URL.
 ```
 
-## What the skill does
+```text
+Inspect this Laravel repository and add a safe manual preview workflow.
+```
 
-1. Inspects the Laravel project.
-2. Detects PHP, Composer, database, and frontend requirements.
-3. Creates an isolated preview environment.
-4. Runs migrations and seeders.
-5. Builds frontend assets.
-6. Exposes the app through HTTPS.
-7. Verifies assets and browser compatibility before handoff.
+## Important limitation
 
-## Safety
+Cloudflare Quick Tunnel URLs are public, temporary, have no uptime guarantee, and last only while the workflow remains running. Use only disposable credentials and synthetic data. Use a named tunnel protected by Cloudflare Access when the preview must be private.
 
-Never expose:
+## Validate a customized workflow
 
-- production databases
-- production secrets
-- customer data
-- payment credentials
-
-Use disposable preview infrastructure only.
-
-## Compatible projects
-
-Works especially well with:
-
-- Laravel
-- FilamentPHP
-- Livewire
-- Vite
-- MySQL
+```bash
+python3 skills/laravel-preview-environment/scripts/inspect_laravel_project.py /path/to/laravel-project
+python3 skills/laravel-preview-environment/scripts/validate_preview_workflow.py /path/to/preview.yml
+```
