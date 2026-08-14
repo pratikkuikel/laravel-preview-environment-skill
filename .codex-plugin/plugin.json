@@ -1,4 +1,18 @@
 {
-  "name": "laravel-preview-environment",
-  "version": "1.0.0"
+  "name": "laravel-preview-environment-skill",
+  "version": "1.0.0",
+  "description": "Create isolated, verified HTTPS previews for Laravel branches and pull requests.",
+  "author": {
+    "name": "Pratik Kuikel"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Laravel Preview Environment",
+    "shortDescription": "Launch verified disposable Laravel previews.",
+    "longDescription": "Inspect a Laravel branch, create an isolated GitHub Actions runtime with synthetic data, expose it temporarily over HTTPS, and verify the preview before handoff.",
+    "developerName": "Pratik Kuikel",
+    "category": "Developer Tools",
+    "capabilities": [],
+    "defaultPrompt": "Create and verify a disposable HTTPS preview for this Laravel branch or pull request."
+  }
 }

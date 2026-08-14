@@ -1,15 +1,5 @@
-# Laravel Preview Environment Skill
+# Laravel Preview Environment
 
-This repository provides a cross-agent skill for creating temporary Laravel preview environments.
+Apply the following canonical skill whenever the user asks for a temporary Laravel branch or pull-request preview:
 
-The skill is located at:
-
-`skills/laravel-preview-environment/SKILL.md`
-
-Supported workflows:
-- Laravel branch previews
-- GitHub Actions environments
-- MySQL disposable databases
-- Vite builds
-- Filament admin previews
-- HTTPS tunnel verification
+@./skills/laravel-preview-environment/SKILL.md

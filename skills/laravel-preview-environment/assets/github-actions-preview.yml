@@ -1,0 +1,238 @@
+name: Temporary Laravel preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact branch, tag, or commit to preview
+        required: true
+        default: main
+      php_version:
+        description: PHP version supported by composer.lock
+        required: true
+        default: "8.4"
+      node_version:
+        description: Node version supported by the frontend lock file
+        required: true
+        default: "22"
+      seed_synthetic_data:
+        description: Run the reviewed DatabaseSeeder
+        required: true
+        type: boolean
+        default: false
+      lifetime_minutes:
+        description: Minutes to keep the public preview alive
+        required: true
+        type: choice
+        default: "30"
+        options:
+          - "15"
+          - "30"
+          - "60"
+          - "120"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: laravel-preview-${{ github.repository }}-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: laravel_preview
+          MYSQL_ROOT_PASSWORD: preview-only-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_ENV: preview
+      APP_DEBUG: "false"
+      LOG_CHANNEL: stderr
+      MAIL_MAILER: log
+      QUEUE_CONNECTION: sync
+      CACHE_STORE: file
+      SESSION_DRIVER: file
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_DATABASE: laravel_preview
+      DB_USERNAME: root
+      DB_PASSWORD: preview-only-password
+      CLOUDFLARED_VERSION: "2026.7.2"
+      CLOUDFLARED_SHA256: ec905ea7b7e327ff8abdde8cb64697a2152de74dbcdbf6aec9db8364eb3886cd
+
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Record source identity
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee /tmp/preview-sha
+          echo "Source SHA: $(cat /tmp/preview-sha)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          extensions: mbstring, pdo_mysql
+          coverage: none
+        env:
+          fail-fast: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+
+      - name: Install locked dependencies and build assets
+        run: |
+          set -euo pipefail
+          composer install --no-interaction --prefer-dist --no-progress --optimize-autoloader
+          npm ci
+          npm run build
+          test -f public/build/manifest.json
+
+      - name: Configure the disposable application
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          set_env() {
+            sed -i "/^${1}=/d" .env
+            printf '%s=%s\n' "$1" "$2" >> .env
+          }
+          set_env APP_ENV preview
+          set_env APP_DEBUG false
+          set_env LOG_CHANNEL stderr
+          set_env MAIL_MAILER log
+          set_env QUEUE_CONNECTION sync
+          set_env CACHE_STORE file
+          set_env SESSION_DRIVER file
+          set_env DB_CONNECTION mysql
+          set_env DB_HOST 127.0.0.1
+          set_env DB_PORT 3306
+          set_env DB_DATABASE laravel_preview
+          set_env DB_USERNAME root
+          set_env DB_PASSWORD preview-only-password
+          set_env APP_URL http://127.0.0.1:8000
+          set_env ASSET_URL http://127.0.0.1:8000
+          php artisan key:generate --force
+          php artisan optimize:clear
+
+      - name: Migrate the empty preview database
+        run: php artisan migrate:fresh --force
+
+      - name: Seed reviewed synthetic data
+        if: ${{ inputs.seed_synthetic_data }}
+        run: php artisan db:seed --force
+
+      - name: Start and verify the local origin
+        run: |
+          set -euo pipefail
+          nohup php artisan serve --host=127.0.0.1 --port=8000 > /tmp/laravel-preview.log 2>&1 &
+          echo $! > /tmp/laravel-preview.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/laravel-preview.log
+          exit 1
+
+      - name: Install verified cloudflared binary
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            --output /tmp/cloudflared \
+            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64"
+          echo "${CLOUDFLARED_SHA256}  /tmp/cloudflared" | sha256sum --check
+          chmod +x /tmp/cloudflared
+          /tmp/cloudflared --version
+
+      - name: Start the temporary HTTPS tunnel
+        id: tunnel
+        run: |
+          set -euo pipefail
+          nohup /tmp/cloudflared tunnel --url http://127.0.0.1:8000 --no-autoupdate > /tmp/cloudflared.log 2>&1 &
+          echo $! > /tmp/cloudflared.pid
+          for attempt in {1..30}; do
+            preview_url="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' /tmp/cloudflared.log | head -n 1 || true)"
+            if [ -n "$preview_url" ]; then
+              echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+              echo "Preview URL: $preview_url" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/cloudflared.log
+          exit 1
+
+      - name: Apply the public HTTPS origin and restart Laravel
+        env:
+          PREVIEW_URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          set -euo pipefail
+          set_env() {
+            sed -i "/^${1}=/d" .env
+            printf '%s=%s\n' "$1" "$2" >> .env
+          }
+          set_env APP_URL "$PREVIEW_URL"
+          set_env ASSET_URL "$PREVIEW_URL"
+          set_env SESSION_SECURE_COOKIE true
+          php artisan optimize:clear
+          kill "$(cat /tmp/laravel-preview.pid)"
+          nohup php artisan serve --host=127.0.0.1 --port=8000 > /tmp/laravel-preview.log 2>&1 &
+          echo $! > /tmp/laravel-preview.pid
+
+      - name: Verify the public preview
+        env:
+          PREVIEW_URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 12 --retry-all-errors --retry-delay 5 \
+            --silent --show-error "$PREVIEW_URL/" --output /tmp/preview-home.html
+          if grep -Eiq "(src|href|action)=[\"']http://" /tmp/preview-home.html; then
+            echo "Mixed-content URL found in public HTML" >&2
+            exit 1
+          fi
+          kill -0 "$(cat /tmp/laravel-preview.pid)"
+          kill -0 "$(cat /tmp/cloudflared.pid)"
+          echo "Public HTTPS response and process checks passed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the preview alive for the requested lifetime
+        env:
+          LIFETIME_MINUTES: ${{ inputs.lifetime_minutes }}
+        run: |
+          set -euo pipefail
+          echo "The preview remains public for ${LIFETIME_MINUTES} minutes unless this job is cancelled." >> "$GITHUB_STEP_SUMMARY"
+          sleep "$((LIFETIME_MINUTES * 60))"
+
+      - name: Remove the temporary preview
+        if: ${{ always() }}
+        run: |
+          for pid_file in /tmp/cloudflared.pid /tmp/laravel-preview.pid; do
+            if [ -f "$pid_file" ]; then
+              kill "$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+          rm -f .env /tmp/cloudflared /tmp/cloudflared.log /tmp/cloudflared.pid \
+            /tmp/laravel-preview.log /tmp/laravel-preview.pid /tmp/preview-home.html /tmp/preview-sha
+          echo "Temporary preview processes and credential-bearing files were removed." >> "$GITHUB_STEP_SUMMARY"

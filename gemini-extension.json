@@ -1,5 +1,5 @@
 {
   "name": "laravel-preview-environment-skill",
-  "description": "Temporary Laravel preview environment skill for AI agents.",
-  "skills": ["skills/laravel-preview-environment/SKILL.md"]
+  "version": "1.0.0",
+  "contextFileName": "GEMINI.md"
 }
