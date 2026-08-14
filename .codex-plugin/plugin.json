@@ -1,0 +1,5 @@
+{
+  "name": "laravel-preview-environment",
+  "description": "Create isolated temporary Laravel preview environments with GitHub Actions, MySQL, Vite and Cloudflare tunnels.",
+  "version": "1.0.0"
+}
