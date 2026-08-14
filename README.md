@@ -13,7 +13,7 @@ The canonical cross-agent skill is `skills/laravel-preview-environment/SKILL.md`
 
 ## Importable package
 
-Download [`laravel-preview-environment-skill.zip`](https://raw.githubusercontent.com/pratikkuikel/laravel-preview-environment-skill/main/laravel-preview-environment-skill.zip) and import it as a ChatGPT or Codex skill. The archive contains only the Codex plugin manifest, this README, and the canonical skill with its bundled resources.
+Download [`laravel-preview-environment-skill.zip`](https://github.com/pratikkuikel/laravel-preview-environment-skill/releases/download/latest/laravel-preview-environment-skill.zip) and import it as a ChatGPT or Codex skill. Every push to `main` rebuilds and validates this rolling release. The archive contains only the Codex plugin manifest, this README, and the canonical skill with its bundled resources.
 
 ## Direct user-level installation
 

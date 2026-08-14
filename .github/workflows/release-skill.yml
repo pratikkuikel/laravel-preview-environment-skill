@@ -1,0 +1,111 @@
+name: Publish skill release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-skill-release
+  cancel-in-progress: false
+
+env:
+  SKILL_NAME: laravel-preview-environment
+  ARCHIVE_NAME: laravel-preview-environment-skill.zip
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the released commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Validate the canonical skill
+        run: |
+          set -euo pipefail
+          python3 - "$SKILL_NAME" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          name = sys.argv[1]
+          skill = Path("skills") / name / "SKILL.md"
+          text = skill.read_text(encoding="utf-8")
+          match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+          if not match:
+              raise SystemExit("SKILL.md has no YAML frontmatter")
+          fields = {
+              key.strip(): value.strip()
+              for key, value in (
+                  line.split(":", 1)
+                  for line in match.group(1).splitlines()
+                  if ":" in line
+              )
+          }
+          if fields.get("name") != name or not fields.get("description"):
+              raise SystemExit("SKILL.md name or description is invalid")
+          if set(fields) != {"name", "description"}:
+              raise SystemExit("SKILL.md frontmatter must contain only name and description")
+          if not (skill.parent / "agents/openai.yaml").is_file():
+              raise SystemExit("agents/openai.yaml is missing")
+          print(f"Validated canonical skill metadata: {name}")
+          PY
+          PYTHONDONTWRITEBYTECODE=1 python3 \
+            skills/laravel-preview-environment/scripts/inspect_laravel_project.py --help > /dev/null
+          PYTHONDONTWRITEBYTECODE=1 python3 \
+            skills/laravel-preview-environment/scripts/validate_preview_workflow.py \
+            skills/laravel-preview-environment/assets/github-actions-preview.yml
+
+      - name: Build deterministic import archive
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/skill-package"
+          rm -rf "$stage" dist
+          mkdir -p "$stage/.codex-plugin" "$stage/skills" dist
+          cp .codex-plugin/plugin.json "$stage/.codex-plugin/plugin.json"
+          cp README.md "$stage/README.md"
+          cp -a "skills/$SKILL_NAME" "$stage/skills/$SKILL_NAME"
+          find "$stage" -exec touch -h -t 198001010000 {} +
+          (
+            cd "$stage"
+            find . -type f -printf '%P\n' | LC_ALL=C sort | zip -X -q "$GITHUB_WORKSPACE/dist/$ARCHIVE_NAME" -@
+          )
+          sha256sum "dist/$ARCHIVE_NAME" > "dist/$ARCHIVE_NAME.sha256"
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          unzip -t "dist/$ARCHIVE_NAME"
+          if unzip -Z1 "dist/$ARCHIVE_NAME" | grep -Eq '(^|/)(\.git|__pycache__|\.DS_Store)(/|$)|\.pyc$'; then
+            echo "Archive contains excluded development files" >&2
+            exit 1
+          fi
+          if unzip -p "dist/$ARCHIVE_NAME" | grep -aE '/home/|/Users/|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}'; then
+            echo "Archive privacy scan failed" >&2
+            exit 1
+          fi
+
+      - name: Update the rolling GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git tag --force latest "$GITHUB_SHA"
+          git push --force origin refs/tags/latest
+          notes="Automatically built from main commit $GITHUB_SHA. The attached SHA-256 file verifies the importable archive."
+          if gh release view latest > /dev/null 2>&1; then
+            gh release upload latest "dist/$ARCHIVE_NAME" "dist/$ARCHIVE_NAME.sha256" --clobber
+            gh release edit latest --target "$GITHUB_SHA" --title "Latest skill package" --notes "$notes" --latest
+          else
+            gh release create latest "dist/$ARCHIVE_NAME" "dist/$ARCHIVE_NAME.sha256" \
+              --target "$GITHUB_SHA" --title "Latest skill package" --notes "$notes" --latest
+          fi
+          echo "Published https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/${ARCHIVE_NAME}" >> "$GITHUB_STEP_SUMMARY"
